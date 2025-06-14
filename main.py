@@ -291,7 +291,7 @@ For business partnerships or custom development, reach out through our official 
             )
 
     async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-        """Download video directly"""
+        """Download video directly with multiple fallback options"""
         user_id = update.effective_user.id
         
         logger.info(f"User {user_id} downloading: {url}")
@@ -309,35 +309,97 @@ For business partnerships or custom development, reach out through our official 
             # Create temporary directory for this download
             temp_dir = tempfile.mkdtemp()
             
-            # Configure yt-dlp options for best quality video
-            ydl_opts = {
-                'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                'noplaylist': True,
-                'ignoreerrors': False,
-                'no_warnings': True,
-                'format': 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]/best',
-                'merge_output_format': 'mp4',
-            }
+            # Multiple configuration attempts with different strategies
+            config_attempts = [
+                {
+                    'name': 'High Quality',
+                    'opts': {
+                        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                        'noplaylist': True,
+                        'ignoreerrors': True,
+                        'no_warnings': True,
+                        'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                        'merge_output_format': 'mp4',
+                        'extract_flat': False,
+                        'cookiefile': None,
+                        'age_limit': None,
+                        'writesubtitles': False,
+                        'writeautomaticsub': False,
+                        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                },
+                {
+                    'name': 'Medium Quality',
+                    'opts': {
+                        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                        'noplaylist': True,
+                        'ignoreerrors': True,
+                        'no_warnings': True,
+                        'format': 'best[height<=480]/best',
+                        'extract_flat': False,
+                        'cookiefile': None,
+                        'age_limit': None,
+                        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                },
+                {
+                    'name': 'Basic Quality',
+                    'opts': {
+                        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                        'noplaylist': True,
+                        'ignoreerrors': True,
+                        'no_warnings': True,
+                        'format': 'worst/best',
+                        'extract_flat': False
+                    }
+                }
+            ]
             
-            # Update status
-            await processing_message.edit_text(
-                f"📥 Downloading video...\n"
-                f"🔗 URL: `{url[:50]}{'...' if len(url) > 50 else ''}`\n\n"
-                f"⏳ This may take a few moments...",
-                parse_mode='Markdown'
-            )
+            success = False
+            title = "Unknown"
+            duration = 0
             
-            # Download the video
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                title = info.get('title', 'Unknown')
-                duration = info.get('duration', 0)
-                
+            # Try each configuration
+            for attempt in config_attempts:
+                try:
+                    await processing_message.edit_text(
+                        f"📥 Downloading video ({attempt['name']})...\n"
+                        f"🔗 URL: `{url[:50]}{'...' if len(url) > 50 else ''}`\n\n"
+                        f"⏳ This may take a few moments...",
+                        parse_mode='Markdown'
+                    )
+                    
+                    # Clean temp directory for new attempt
+                    for file in os.listdir(temp_dir):
+                        file_path = os.path.join(temp_dir, file)
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                    
+                    with yt_dlp.YoutubeDL(attempt['opts']) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        title = info.get('title', 'Unknown')
+                        duration = info.get('duration', 0)
+                        
+                    # Check if file was downloaded
+                    downloaded_files = [f for f in os.listdir(temp_dir) if os.path.isfile(os.path.join(temp_dir, f))]
+                    
+                    if downloaded_files:
+                        success = True
+                        logger.info(f"Successfully downloaded with {attempt['name']} configuration")
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"Failed with {attempt['name']} configuration: {str(e)}")
+                    continue
+            
+            if not success:
+                raise Exception("All download attempts failed. The video might be private, geo-blocked, or from an unsupported platform.")
+            
             # Find the downloaded file
             downloaded_files = [f for f in os.listdir(temp_dir) if os.path.isfile(os.path.join(temp_dir, f))]
             
             if not downloaded_files:
-                raise Exception("No file was downloaded")
+                raise Exception("No file was downloaded despite successful extraction")
             
             file_path = os.path.join(temp_dir, downloaded_files[0])
             file_size = os.path.getsize(file_path)
@@ -348,10 +410,14 @@ For business partnerships or custom development, reach out through our official 
                     f"❌ **File too large!**\n\n"
                     f"📁 File size: {file_size / (1024*1024):.1f} MB\n"
                     f"⚠️ Telegram limit: 50 MB\n\n"
-                    f"The video is too large to send via Telegram. Please try with a shorter video or contact the developer for alternative solutions.",
+                    f"The video is too large to send via Telegram. Please try with a shorter video.",
                     parse_mode='Markdown'
                 )
                 return
+            
+            # Check if file is actually a video (minimum 1KB)
+            if file_size < 1024:
+                raise Exception("Downloaded file is too small or corrupted")
             
             # Update status
             await processing_message.edit_text(
@@ -389,16 +455,34 @@ For business partnerships or custom development, reach out through our official 
             logger.error(f"Download error for user {user_id}: {str(e)}")
             error_message = str(e)
             
+            # Provide more specific error messages
+            if "login" in error_message.lower() or "private" in error_message.lower():
+                specific_error = "🔒 This video requires login or is private"
+            elif "rate" in error_message.lower() or "limit" in error_message.lower():
+                specific_error = "⏱️ Rate limit reached - please try again later"
+            elif "geo" in error_message.lower() or "country" in error_message.lower():
+                specific_error = "🌍 Video not available in this region"
+            elif "not available" in error_message.lower():
+                specific_error = "❌ Video not available or removed"
+            elif "instagram" in error_message.lower():
+                specific_error = "📸 Instagram videos may require login - try a public post"
+            elif "facebook" in error_message.lower():
+                specific_error = "📘 Facebook videos may be private or restricted"
+            elif "tiktok" in error_message.lower():
+                specific_error = "🎵 TikTok video may be private or age-restricted"
+            else:
+                specific_error = f"🚫 {error_message[:80]}{'...' if len(error_message) > 80 else ''}"
+            
             await processing_message.edit_text(
                 f"❌ **Download Failed!**\n\n"
-                f"🚫 Error: {error_message[:100]}{'...' if len(error_message) > 100 else ''}\n\n"
-                f"💡 **Possible reasons:**\n"
-                f"• Video is private or restricted\n"
-                f"• URL is not supported\n"
-                f"• Network connection issues\n"
-                f"• Video is too long or large\n"
-                f"• Geographic restrictions\n\n"
-                f"Try with a different URL or contact support!",
+                f"{specific_error}\n\n"
+                f"💡 **Suggestions:**\n"
+                f"• Try a public/non-private video\n"
+                f"• Use YouTube links (most reliable)\n"
+                f"• Check if the video URL is correct\n"
+                f"• Wait a few minutes and try again\n\n"
+                f"✅ **Supported platforms:** YouTube, many public video sites\n"
+                f"⚠️ **May not work:** Private videos, login-required content",
                 parse_mode='Markdown'
             )
         
