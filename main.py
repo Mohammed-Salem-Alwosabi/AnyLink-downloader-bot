@@ -22,7 +22,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-BOT_TOKEN = "7838776856:AAErH9mZQX1j29803t98hE9YFcab8fUm-gk"
+import os
+BOT_TOKEN = os.getenv('BOT_TOKEN', '7838776856:AAErH9mZQX1j29803t98hE9YFcab8fUm-gk')
 
 class AnyLinkDownloaderBot:
     def __init__(self):
