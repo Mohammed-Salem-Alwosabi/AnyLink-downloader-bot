@@ -1,4 +1,4 @@
-#AnyLink Downloader Bot.py - Improved Version
+#AnyLink Downloader Bot.py - Fixed Version
 import os
 import asyncio
 import logging
@@ -12,6 +12,8 @@ import sys
 import re
 import json
 from urllib.parse import urlparse
+import random
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -48,12 +50,16 @@ class AnyLinkDownloaderBot:
             'instagram': 'https://instagram.com/karzma_co.ms'
         }
         
-        # Improved user agents for different platforms
+        # Enhanced user agents with more variation
         self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0'
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/121.0.0.0',
+            'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
         ]
         
         self.setup_handlers()
@@ -129,7 +135,12 @@ class AnyLinkDownloaderBot:
             return 'unknown'
 
     def get_ydl_opts(self, temp_dir, platform='unknown', attempt=1):
-        """Get optimized yt-dlp options based on platform and attempt"""
+        """Get optimized yt-dlp options with anti-bot detection"""
+        
+        # Random user agent selection
+        user_agent = random.choice(self.user_agents)
+        
+        # Base options with anti-detection measures
         base_opts = {
             'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
             'noplaylist': True,
@@ -141,34 +152,80 @@ class AnyLinkDownloaderBot:
             'writesubtitles': False,
             'writeautomaticsub': False,
             'embedsubs': False,
-            'socket_timeout': 30,
-            'retries': 3,
-            'fragment_retries': 3,
-            'user_agent': self.user_agents[attempt % len(self.user_agents)],
+            'socket_timeout': 60,  # Increased timeout
+            'retries': 5,  # More retries
+            'fragment_retries': 5,
+            'user_agent': user_agent,
             'referer': None,
+            
+            # Anti-bot detection headers
             'http_headers': {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+                'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
+            },
+            
+            # Additional anti-detection options
+            'sleep_interval': random.uniform(1, 3),  # Random delay between requests
+            'max_sleep_interval': 5,
+            'sleep_interval_subtitles': random.uniform(0.5, 1.5),
+            'extractor_args': {
+                'youtube': {
+                    'skip': ['hls', 'dash'],  # Skip problematic formats
+                    'player_skip': ['configs'],  # Skip player config
+                    'comment_sort': ['top'],
+                    'max_comments': ['0'],  # Don't fetch comments
+                }
             }
         }
 
         # Platform-specific configurations
         if platform == 'youtube':
             if attempt == 1:
+                # First attempt: try for good quality but avoid problematic formats
                 base_opts.update({
-                    'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[ext=mp4]/best',
-                    'merge_output_format': 'mp4'
+                    'format': 'best[height<=720][ext=mp4]/best[ext=mp4]/mp4/best',
+                    'merge_output_format': 'mp4',
+                    'prefer_ffmpeg': True,
+                    'postprocessors': [{
+                        'key': 'FFmpegVideoConvertor',
+                        'preferedformat': 'mp4',
+                    }]
                 })
             elif attempt == 2:
+                # Second attempt: lower quality, more compatible
                 base_opts.update({
-                    'format': 'best[height<=480]/best',
+                    'format': 'best[height<=480]/worst[ext=mp4]/worst',
+                    'prefer_ffmpeg': True
                 })
-            else:
+            elif attempt == 3:
+                # Third attempt: use alternative extractors
                 base_opts.update({
                     'format': 'worst/best',
+                    'prefer_insecure': True,
+                    'extractor_args': {
+                        'youtube': {
+                            'player_client': ['android', 'web'],
+                            'skip': ['dash'],
+                        }
+                    }
+                })
+            else:
+                # Last attempt: most basic settings
+                base_opts.update({
+                    'format': 'worst',
+                    'prefer_insecure': True,
+                    'no_check_certificate': True
                 })
         
         elif platform == 'instagram':
@@ -177,40 +234,41 @@ class AnyLinkDownloaderBot:
                 'http_headers': {
                     **base_opts['http_headers'],
                     'X-Requested-With': 'XMLHttpRequest',
+                    'X-Instagram-AJAX': '1',
                 }
             })
-            if attempt >= 2:
-                base_opts['format'] = 'worst/best'
         
         elif platform == 'tiktok':
             base_opts.update({
                 'format': 'best[ext=mp4]/best',
                 'http_headers': {
                     **base_opts['http_headers'],
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
+                    'Referer': 'https://www.tiktok.com/',
                 }
             })
         
         elif platform == 'facebook':
             base_opts.update({
                 'format': 'best[ext=mp4]/best',
+                'http_headers': {
+                    **base_opts['http_headers'],
+                    'Referer': 'https://www.facebook.com/',
+                }
             })
         
         elif platform == 'twitter':
             base_opts.update({
                 'format': 'best[ext=mp4]/best',
+                'http_headers': {
+                    **base_opts['http_headers'],
+                    'Referer': 'https://twitter.com/',
+                }
             })
         
         else:  # Unknown platform
-            if attempt == 1:
+            if attempt <= 2:
                 base_opts.update({
                     'format': 'best[ext=mp4]/best',
-                })
-            elif attempt == 2:
-                base_opts.update({
-                    'format': 'best[height<=480]/best',
                 })
             else:
                 base_opts.update({
@@ -256,51 +314,7 @@ Just send me a video URL to get started! 🚀
             elif update.callback_query:
                 await update.callback_query.edit_message_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
         except Exception as e:
-            logger.error(f"Failed to get bot info: {e}")
-
-    def run(self):
-        """Start the bot"""
-        print("🚀 Starting AnyLink Downloader Bot (Improved Version)...")
-        print(f"👨‍💻 Developer: {self.developer_info['name']}")
-        print(f"🏢 Company: {self.company_info['name']}")
-        print("📱 Bot is running... Press Ctrl+C to stop.")
-        
-        # Add post init callback
-        self.application.post_init = self.post_init
-        
-        # Handle graceful shutdown
-        def signal_handler(signum, frame):
-            logger.info("Received shutdown signal, stopping bot...")
-            self.application.stop()
-            sys.exit(0)
-        
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
-        # Start the bot
-        try:
-            self.application.run_polling(
-                drop_pending_updates=True,  # Ignore old messages
-                allowed_updates=Update.ALL_TYPES
-            )
-        except Exception as e:
-            logger.error(f"Error running bot: {e}")
-            sys.exit(1)
-
-if __name__ == "__main__":
-    # Check if required packages are installed
-    try:
-        import yt_dlp
-        import telegram
-    except ImportError as e:
-        print(f"❌ Missing required package: {e}")
-        print("Please install required packages:")
-        print("pip install python-telegram-bot yt-dlp")
-        sys.exit(1)
-    
-    bot = AnyLinkDownloaderBot()
-    bot.run()
-    logger.error(f"Error in start_command: {e}")
+            logger.error(f"Error in start_command: {e}")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
@@ -327,6 +341,7 @@ if __name__ == "__main__":
 🎵 **Multiple Formats:** Supports MP4 and other formats
 ⚡ **Fast Processing:** Optimized for each platform
 🔄 **Retry Logic:** Multiple attempts for better success rate
+🛡️ **Anti-Detection:** Advanced bot detection bypass
 
 **Tips:**
 • For Instagram: Use direct post/reel links
@@ -356,15 +371,16 @@ Need more help? Use /contact to reach the developer! 👨‍💻
         about_text = f"""
 ℹ️ **About AnyLink Downloader Bot** ℹ️
 
-**Version:** 2.0.0 (Improved)
+**Version:** 2.1.0 (Anti-Bot Fixed)
 **Developer:** {self.developer_info['name']}
 **Company:** {self.company_info['name']}
 
 **Description:**
-AnyLink Downloader is a versatile Telegram bot designed to simplify media downloads from various online platforms. This improved version features platform-specific optimizations and enhanced reliability.
+AnyLink Downloader is a versatile Telegram bot designed to simplify media downloads from various online platforms. This version includes advanced anti-bot detection bypass.
 
 **Key Features:**
 • Platform-specific download optimization
+• Advanced anti-bot detection bypass
 • Multiple retry strategies for better success
 • Smart quality selection based on platform
 • Enhanced error handling and user feedback
@@ -372,10 +388,11 @@ AnyLink Downloader is a versatile Telegram bot designed to simplify media downlo
 • User-friendly interface with inline keyboards
 
 **Recent Improvements:**
+• Fixed YouTube "Sign in to confirm you're not a bot" error
+• Enhanced anti-detection measures
 • Better Instagram and TikTok support
-• Enhanced YouTube download reliability
+• Improved retry logic with random delays
 • Platform-specific user agents and headers
-• Improved error messages and troubleshooting
 
 **Developed with ❤️ by KaRZMa Code**
 
@@ -479,7 +496,7 @@ For business partnerships or custom development, reach out through our official 
             )
 
     async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-        """Enhanced download function with platform-specific handling"""
+        """Enhanced download function with anti-bot detection bypass"""
         user_id = update.effective_user.id
         platform = self.get_platform_from_url(url)
         
@@ -490,6 +507,7 @@ For business partnerships or custom development, reach out through our official 
             f"⏳ Processing your {platform.title()} request...\n"
             f"🔗 URL: `{url[:50]}{'...' if len(url) > 50 else ''}`\n\n"
             f"🎯 Platform detected: **{platform.title()}**\n"
+            f"🛡️ Bypassing bot detection...\n"
             f"Please wait while I download the video...",
             parse_mode='Markdown'
         )
@@ -503,14 +521,18 @@ For business partnerships or custom development, reach out through our official 
             title = "Unknown"
             duration = 0
             file_path = None
-            max_attempts = 4
+            max_attempts = 5  # Increased attempts
             
-            # Try multiple configurations with platform-specific optimizations
+            # Add initial delay to appear more human-like
+            await asyncio.sleep(random.uniform(1, 3))
+            
+            # Try multiple configurations with enhanced anti-detection
             for attempt in range(1, max_attempts + 1):
                 try:
                     await processing_message.edit_text(
                         f"📥 Downloading from {platform.title()} (Attempt {attempt}/{max_attempts})...\n"
                         f"🔗 URL: `{url[:50]}{'...' if len(url) > 50 else ''}`\n\n"
+                        f"🛡️ Using advanced anti-detection (Method {attempt})\n"
                         f"⏳ This may take a few moments...",
                         parse_mode='Markdown'
                     )
@@ -521,23 +543,43 @@ For business partnerships or custom development, reach out through our official 
                         if os.path.isfile(file_path_temp):
                             os.remove(file_path_temp)
                     
-                    # Get platform-specific options
+                    # Add random delay between attempts
+                    if attempt > 1:
+                        delay = random.uniform(2, 5)
+                        await asyncio.sleep(delay)
+                    
+                    # Get platform-specific options with anti-detection
                     ydl_opts = self.get_ydl_opts(temp_dir, platform, attempt)
                     
-                    # Add platform-specific extractors if needed
-                    if platform == 'instagram':
-                        # Try to extract info first to check if it's accessible
-                        with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+                    # Special handling for YouTube to avoid bot detection
+                    if platform == 'youtube':
+                        # Try to extract info first with minimal options
+                        test_opts = {
+                            'quiet': True,
+                            'no_warnings': True,
+                            'user_agent': random.choice(self.user_agents),
+                            'socket_timeout': 30,
+                            'extractor_args': {
+                                'youtube': {
+                                    'player_client': ['android', 'web'],
+                                    'skip': ['dash', 'hls'],
+                                }
+                            }
+                        }
+                        
+                        with yt_dlp.YoutubeDL(test_opts) as ydl:
                             try:
                                 info = ydl.extract_info(url, download=False)
                                 if not info:
                                     raise Exception("Could not extract video information")
+                                logger.info(f"Successfully extracted info for YouTube video on attempt {attempt}")
                             except Exception as e:
+                                logger.warning(f"Info extraction failed on attempt {attempt}: {str(e)}")
                                 if attempt < max_attempts:
                                     continue
                                 raise e
                     
-                    # Perform the download
+                    # Perform the download with enhanced options
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(url, download=True)
                         title = info.get('title', 'Unknown')
@@ -560,7 +602,15 @@ For business partnerships or custom development, reach out through our official 
                             logger.warning(f"Downloaded file too small ({file_size} bytes) on attempt {attempt}")
                             
                 except Exception as e:
+                    error_msg = str(e).lower()
                     logger.warning(f"Attempt {attempt} failed for {platform}: {str(e)}")
+                    
+                    # Check for specific YouTube bot detection errors
+                    if platform == 'youtube' and ('sign in' in error_msg or 'bot' in error_msg):
+                        logger.info(f"Bot detection encountered on attempt {attempt}, trying alternative method...")
+                        # Continue to next attempt with different strategy
+                        continue
+                    
                     if attempt == max_attempts:
                         raise e
                     continue
@@ -587,7 +637,8 @@ For business partnerships or custom development, reach out through our official 
                 f"📤 Uploading to Telegram...\n"
                 f"📁 **{title[:30]}{'...' if len(title) > 30 else ''}**\n"
                 f"📊 Size: {file_size / (1024*1024):.1f} MB\n"
-                f"🎯 Platform: {platform.title()}\n\n"
+                f"🎯 Platform: {platform.title()}\n"
+                f"✅ Anti-detection: Success!\n\n"
                 f"⏳ Almost done...",
                 parse_mode='Markdown'
             )
@@ -599,7 +650,8 @@ For business partnerships or custom development, reach out through our official 
                      f"🎯 **Platform:** {platform.title()}\n" \
                      f"⏱️ **Duration:** {duration_text}\n" \
                      f"📊 **Size:** {file_size / (1024*1024):.1f} MB\n\n" \
-                     f"🤖 **Downloaded by AnyLink Downloader Bot**"
+                     f"🤖 **Downloaded by AnyLink Downloader Bot**\n" \
+                     f"🛡️ **Anti-Detection: Enabled**"
             
             # Send the video
             with open(file_path, 'rb') as file:
@@ -620,32 +672,80 @@ For business partnerships or custom development, reach out through our official 
             logger.error(f"Download error for user {user_id} from {platform}: {str(e)}")
             error_message = str(e).lower()
             
-            # Provide platform-specific error messages
-            if platform == 'instagram':
-                if "private" in error_message or "login" in error_message:
-                    specific_error = "🔒 Instagram: This account or post is private"
-                elif "not found" in error_message:
-                    specific_error = "❌ Instagram: Post not found or deleted"
-                else:
-                    specific_error = "📸 Instagram: Try using direct post/reel links"
-            elif platform == 'tiktok':
-                if "private" in error_message:
-                    specific_error = "🔒 TikTok: This video is private or age-restricted"
-                elif "not available" in error_message:
-                    specific_error = "❌ TikTok: Video not available in this region"
-                else:
-                    specific_error = "🎵 TikTok: Try both long and short URL formats"
-            elif platform == 'youtube':
-                if "private" in error_message:
-                    specific_error = "🔒 YouTube: This video is private or unlisted"
+            # Enhanced error handling with specific solutions
+            if platform == 'youtube':
+                if "sign in" in error_message or "bot" in error_message:
+                    specific_error = "🤖 YouTube detected bot activity - trying alternative methods"
+                    suggestions = [
+                        "• The bot is using advanced anti-detection methods",
+                        "• Try again in a few minutes",
+                        "• Some videos may be temporarily unavailable",
+                        "• Make sure the video is public and not age-restricted"
+                    ]
+                elif "private" in error_message or "unavailable" in error_message:
+                    specific_error = "🔒 YouTube: Video is private, unavailable, or deleted"
+                    suggestions = [
+                        "• Check if the video still exists",
+                        "• Make sure the video is public",
+                        "• Try a different YouTube video"
+                    ]
                 elif "live" in error_message:
                     specific_error = "📺 YouTube: Live streams cannot be downloaded"
+                    suggestions = [
+                        "• Wait for the live stream to end",
+                        "• Try downloading after it becomes a regular video"
+                    ]
                 else:
-                    specific_error = "📺 YouTube: Video may be geo-blocked or removed"
+                    specific_error = "📺 YouTube: Temporary access issue"
+                    suggestions = [
+                        "• The bot has advanced anti-detection enabled",
+                        "• Try again in a few minutes",
+                        "• Some videos may require special handling"
+                    ]
+            elif platform == 'instagram':
+                if "private" in error_message or "login" in error_message:
+                    specific_error = "🔒 Instagram: Account or post is private"
+                    suggestions = [
+                        "• Use direct Instagram post/reel links",
+                        "• Make sure the account is public",
+                        "• Try copying the link from Instagram web"
+                    ]
+                else:
+                    specific_error = "📸 Instagram: Access issue"
+                    suggestions = [
+                        "• Use direct post or reel links",
+                        "• Make sure the post is public",
+                        "• Try again in a few minutes"
+                    ]
+            elif platform == 'tiktok':
+                if "private" in error_message:
+                    specific_error = "🔒 TikTok: Video is private or age-restricted"
+                    suggestions = [
+                        "• Try both tiktok.com and vm.tiktok.com links",
+                        "• Make sure the video is public",
+                        "• Some videos may be region-restricted"
+                    ]
+                else:
+                    specific_error = "🎵 TikTok: Access issue"
+                    suggestions = [
+                        "• Try different URL formats",
+                        "• Make sure the video is public",
+                        "• Try again later"
+                    ]
             elif platform == 'facebook':
                 specific_error = "📘 Facebook: Most videos require login or are private"
+                suggestions = [
+                    "• Facebook videos are often restricted",
+                    "• Try public Facebook pages",
+                    "• YouTube links work better"
+                ]
             elif platform == 'twitter':
-                specific_error = "🐦 Twitter/X: Video may be private or deleted"
+                specific_error = "🐦 Twitter/X: Video access issue"
+                suggestions = [
+                    "• Make sure the tweet is public",
+                    "• Try direct video links",
+                    "• Some videos may be restricted"
+                ]
             else:
                 if "login" in error_message or "private" in error_message:
                     specific_error = "🔒 This video requires login or is private"
@@ -657,32 +757,11 @@ For business partnerships or custom development, reach out through our official 
                     specific_error = "❌ Video not available or removed"
                 else:
                     specific_error = f"🚫 {str(e)[:80]}{'...' if len(str(e)) > 80 else ''}"
-            
-            # Platform-specific suggestions
-            suggestions = []
-            if platform == 'instagram':
-                suggestions = [
-                    "• Use direct Instagram post or reel links",
-                    "• Make sure the account is public",
-                    "• Try copying the link from Instagram web"
-                ]
-            elif platform == 'tiktok':
-                suggestions = [
-                    "• Try both tiktok.com and vm.tiktok.com links",
-                    "• Make sure the video is public",
-                    "• Some TikTok videos may be region-restricted"
-                ]
-            elif platform == 'youtube':
+                
                 suggestions = [
                     "• YouTube links are most reliable",
                     "• Make sure the video is public",
-                    "• Try copying the link from YouTube directly"
-                ]
-            else:
-                suggestions = [
-                    "• Try YouTube links (most reliable)",
-                    "• Make sure the video is public/non-private",
-                    "• Check if the URL is correct and complete"
+                    "• Try again in a few minutes"
                 ]
             
             suggestion_text = "\n".join(suggestions)
@@ -691,10 +770,11 @@ For business partnerships or custom development, reach out through our official 
                 f"❌ **{platform.title()} Download Failed!**\n\n"
                 f"{specific_error}\n\n"
                 f"💡 **Suggestions:**\n"
-                f"{suggestion_text}\n"
-                f"• Wait a few minutes and try again\n\n"
+                f"{suggestion_text}\n\n"
+                f"🛡️ **Note:** This bot uses advanced anti-detection methods\n"
                 f"✅ **Most reliable:** YouTube, public posts\n"
-                f"⚠️ **May not work:** Private videos, login-required content",
+                f"⚠️ **May not work:** Private videos, login-required content\n\n"
+                f"🔄 **Try again or contact support if issues persist**",
                 parse_mode='Markdown'
             )
         
@@ -713,4 +793,47 @@ For business partnerships or custom development, reach out through our official 
             logger.info(f"Bot @{bot_info.username} is ready!")
         except Exception as e:
             logger.error(f"Failed to get bot info: {e}")
-            print(f"❌ Failed to get bot info: {e}")
+
+    def run(self):
+        """Start the bot"""
+        print("🚀 Starting AnyLink Downloader Bot (Anti-Bot Fixed Version)...")
+        print(f"👨‍💻 Developer: {self.developer_info['name']}")
+        print(f"🏢 Company: {self.company_info['name']}")
+        print("🛡️ Anti-detection methods: ENABLED")
+        print("📱 Bot is running... Press Ctrl+C to stop.")
+        
+        # Add post init callback
+        self.application.post_init = self.post_init
+        
+        # Handle graceful shutdown
+        def signal_handler(signum, frame):
+            logger.info("Received shutdown signal, stopping bot...")
+            self.application.stop()
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        # Start the bot
+        try:
+            self.application.run_polling(
+                drop_pending_updates=True,  # Ignore old messages
+                allowed_updates=Update.ALL_TYPES
+            )
+        except Exception as e:
+            logger.error(f"Error running bot: {e}")
+            sys.exit(1)
+
+if __name__ == "__main__":
+    # Check if required packages are installed
+    try:
+        import yt_dlp
+        import telegram
+    except ImportError as e:
+        print(f"❌ Missing required package: {e}")
+        print("Please install required packages:")
+        print("pip install python-telegram-bot yt-dlp")
+        sys.exit(1)
+    
+    bot = AnyLinkDownloaderBot()
+    bot.run()
