@@ -1,4 +1,4 @@
-#AnyLink Downloader Bot.py - v2.2.1 (Command Fix)
+#AnyLink Downloader Bot.py - v2.2.2 (Platform Fix)
 import os
 import asyncio
 import logging
@@ -33,7 +33,6 @@ if not BOT_TOKEN:
     sys.exit(1)
 
 # Get optional YouTube cookie file path from environment variables
-# This is an advanced feature for the developer to bypass stubborn blocks.
 YOUTUBE_COOKIE_FILE = os.getenv('YOUTUBE_COOKIE_FILE', None)
 if YOUTUBE_COOKIE_FILE and not os.path.exists(YOUTUBE_COOKIE_FILE):
     logger.warning(f"YouTube cookie file specified but not found at: {YOUTUBE_COOKIE_FILE}")
@@ -98,20 +97,13 @@ class AnyLinkDownloaderBot:
     def get_platform_from_url(self, url):
         """Determine the platform from URL"""
         hostname = urlparse(url).hostname.lower().replace('www.', '')
-        if 'youtube.com' in hostname or 'youtu.be' in hostname:
-            return 'youtube'
-        if 'instagram.com' in hostname:
-            return 'instagram'
-        if 'tiktok.com' in hostname:
-            return 'tiktok'
-        if 'facebook.com' in hostname or 'fb.watch' in hostname:
-            return 'facebook'
-        if 'twitter.com' in hostname or 'x.com' in hostname:
-            return 'twitter'
-        if 'twitch.tv' in hostname:
-            return 'twitch'
-        if 'reddit.com' in hostname:
-            return 'reddit'
+        if 'youtube.com' in hostname or 'youtu.be' in hostname: return 'youtube'
+        if 'instagram.com' in hostname: return 'instagram'
+        if 'tiktok.com' in hostname: return 'tiktok'
+        if 'facebook.com' in hostname or 'fb.watch' in hostname: return 'facebook'
+        if 'twitter.com' in hostname or 'x.com' in hostname: return 'twitter'
+        if 'twitch.tv' in hostname: return 'twitch'
+        if 'reddit.com' in hostname: return 'reddit'
         return 'unknown'
 
     def get_ydl_opts(self, temp_dir, platform='unknown', attempt=1):
@@ -148,10 +140,11 @@ class AnyLinkDownloaderBot:
                     logger.info("Attempt 5: Using YouTube cookie file.")
             base_opts.update(yt_opts)
         else:
-            base_opts['format'] = 'best[ext=mp4]/best'
+            # General options for other platforms
+            base_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
         return base_opts
 
-    # --- Command Handlers (FIXED) ---
+    # --- Command Handlers ---
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_name = update.effective_user.first_name or "User"
@@ -176,7 +169,7 @@ class AnyLinkDownloaderBot:
             await update.message.reply_text(text=help_text, reply_markup=reply_markup, parse_mode='Markdown')
 
     async def about_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        about_text = f"""ℹ️ **About AnyLink Downloader Bot** ℹ️\n\n**Version:** 2.2.1 (Command Fix)\n**Developer:** {self.developer_info['name']}\n**Company:** {self.company_info['name']}\n\nThis bot uses a multi-layered approach to bypass bot detection.\n\n**Developed with ❤️ by KaRZMa Code**"""
+        about_text = f"""ℹ️ **About AnyLink Downloader Bot** ℹ️\n\n**Version:** 2.2.2 (Platform Fix)\n**Developer:** {self.developer_info['name']}\n**Company:** {self.company_info['name']}\n\nThis bot uses a multi-layered approach to bypass bot detection.\n\n**Developed with ❤️ by KaRZMa Code**"""
         keyboard = [[InlineKeyboardButton("📞 Contact Developer", callback_data="contact"), InlineKeyboardButton("🏠 Main Menu", callback_data="start")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -216,41 +209,72 @@ class AnyLinkDownloaderBot:
         processing_message = await update.message.reply_text(f"⏳ Processing your {platform.title()} request...")
         temp_dir = tempfile.mkdtemp()
         try:
-            success = False; file_path = None; max_attempts = 5; last_error = "Unknown error"
+            success = False
+            file_path = None
+            info = {}
+            max_attempts = 5
+            last_error = "Unknown error"
+
             for attempt in range(1, max_attempts + 1):
                 try:
                     await processing_message.edit_text(f"📥 Downloading from {platform.title()} (Attempt {attempt}/{max_attempts})...")
+                    # Clean directory for retry
                     for f in os.listdir(temp_dir): os.remove(os.path.join(temp_dir, f))
+                    
                     if attempt > 1: await asyncio.sleep(random.uniform(2, 5))
+                    
                     ydl_opts = self.get_ydl_opts(temp_dir, platform, attempt)
+                    
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(url, download=True)
+                    
                     downloaded_files = [f for f in os.listdir(temp_dir) if os.path.isfile(os.path.join(temp_dir, f))]
                     if downloaded_files:
                         file_path = os.path.join(temp_dir, downloaded_files[0])
                         if os.path.getsize(file_path) > 1024:
-                            success = True; logger.info(f"Successfully downloaded on attempt {attempt}"); break
+                            success = True
+                            logger.info(f"Successfully downloaded on attempt {attempt}")
+                            break
                         else: last_error = "Downloaded file was empty."
                     else: last_error = "No file was downloaded."
                 except Exception as e:
-                    last_error = str(e); logger.warning(f"Attempt {attempt} failed: {last_error}")
+                    last_error = str(e)
+                    logger.warning(f"Attempt {attempt} failed: {last_error}")
                     if attempt == max_attempts: raise e
-            if not success or not file_path: raise Exception(f"All {max_attempts} attempts failed. Last error: {last_error}")
+            
+            if not success or not file_path:
+                raise Exception(f"All {max_attempts} attempts failed. Last error: {last_error}")
+
             file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if file_size_mb > 49:
-                await processing_message.edit_text(f"❌ **File too large!** ({file_size_mb:.1f} MB). Telegram's limit is 50 MB."); return
+                await processing_message.edit_text(f"❌ **File too large!** ({file_size_mb:.1f} MB). Telegram's limit is 50 MB.")
+                return
+
             await processing_message.edit_text("📤 Uploading to Telegram...")
-            title = info.get('title', 'Unknown Title'); duration = info.get('duration', 0)
-            duration_text = f"{duration//60}:{duration%60:02d}" if duration else "N/A"
+            
+            title = info.get('title', 'Unknown Title')
+            duration = info.get('duration', 0)
+            
+            # --- BUG FIX IS HERE ---
+            # Ensure duration is an integer before formatting to prevent errors
+            if duration:
+                duration_text = f"{int(duration // 60)}:{int(duration % 60):02d}"
+            else:
+                duration_text = "N/A"
+            
             caption = f"✅ **{title[:60]}...**\n\n" \
                       f"🎯 **Platform:** {platform.title()} | ⏱️ **Duration:** {duration_text}\n\n" \
                       f"🤖 Downloaded by @{context.bot.username}"
+            
             with open(file_path, 'rb') as video_file:
                 await context.bot.send_video(chat_id=update.effective_chat.id, video=video_file, caption=caption, parse_mode='Markdown', supports_streaming=True)
+            
             await processing_message.delete()
+
         except Exception as e:
             logger.error(f"Final download error for user {update.effective_user.id}: {str(e)}")
-            error_message = str(e).lower(); final_error_text = "❌ **Download Failed!**\n\n"
+            error_message = str(e).lower()
+            final_error_text = "❌ **Download Failed!**\n\n"
             if 'sign in to confirm' in error_message or 'not a bot' in error_message:
                 final_error_text += "🤖 **Reason:** YouTube is blocking the download due to high security. Please try a different video or try this one again later."
             elif "private" in error_message or "unavailable" in error_message:
@@ -266,10 +290,10 @@ class AnyLinkDownloaderBot:
 
     async def post_init(self, application: Application):
         bot_info = await application.bot.get_me()
-        logger.info(f"Bot @{bot_info.username} (v2.2.1) is initialized and ready!")
+        logger.info(f"Bot @{bot_info.username} (v2.2.2) is initialized and ready!")
 
     def run(self):
-        logger.info("🚀 Starting AnyLink Downloader Bot (v2.2.1 Command Fix)...")
+        logger.info("🚀 Starting AnyLink Downloader Bot (v2.2.2 Platform Fix)...")
         self.application.post_init = self.post_init
         def signal_handler(signum, frame):
             logger.info("Shutdown signal received, stopping bot...")
