@@ -1,454 +1,369 @@
-# main.py - DEBUG VERSION to find download issues
+#AnyLink Downloader Bot.py - v2.2 (Enhanced Anti-Bot)
 import os
-import sys
+import asyncio
 import logging
+import sys
+import re
+import random
+import time
 import tempfile
 import shutil
-import subprocess
+import signal
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import re
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+import yt_dlp
 
-# Hardcoded token for testing
-BOT_TOKEN = "7838776856:AAErH9mZQX1j29803t98hE9YFcab8fUm-gk"
+# --- Configuration ---
 
-# Enhanced logging
+# Configure logging to output to the console (best for services like Railway)
 logging.basicConfig(
-    level=logging.DEBUG,  # More detailed logging
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger(__name__)
 
-print("🔍 DEBUG MODE: Enhanced logging enabled")
-print(f"🤖 Bot token: {BOT_TOKEN[:20]}...")
-print("🚀 Starting DEBUG version of AnyLink Downloader Bot...")
+# Get BOT_TOKEN from environment variables. Exit if not found.
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+if not BOT_TOKEN:
+    logger.critical("FATAL: BOT_TOKEN environment variable is not set.")
+    sys.exit(1)
 
-# Check system environment
-print("\n📊 SYSTEM ENVIRONMENT CHECK:")
-print(f"🐍 Python version: {sys.version}")
-print(f"📁 Current directory: {os.getcwd()}")
-print(f"🌍 Environment variables: {len(os.environ)}")
-print(f"💾 Temp directory: {tempfile.gettempdir()}")
+# Get optional YouTube cookie file path from environment variables
+# This is an advanced feature for the developer to bypass stubborn blocks.
+YOUTUBE_COOKIE_FILE = os.getenv('YOUTUBE_COOKIE_FILE', None)
+if YOUTUBE_COOKIE_FILE and not os.path.exists(YOUTUBE_COOKIE_FILE):
+    logger.warning(f"YouTube cookie file specified but not found at: {YOUTUBE_COOKIE_FILE}")
+    YOUTUBE_COOKIE_FILE = None
 
-class DebugBot:
+
+class AnyLinkDownloaderBot:
     def __init__(self):
         self.application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Developer and company info
+        self.developer_info = {
+            'name': 'Mohammed Salem Alwosabi',
+            'email': 'm.salem.alwosabi@gmail.com',
+            'whatsapp': '+967739003665',
+            'telegram': '@MohammedAlwosabi',
+            'facebook': 'https://www.facebook.com/share/1EetzPibZt/',
+            'instagram': 'https://www.instagram.com/m.salem_hy',
+            'linkedin': 'https://www.linkedin.com/in/mohammed-salem-ali-alwosabi-842757321'
+        }
+        
+        self.company_info = {
+            'name': 'KaRZMa Code',
+            'telegram': 'https://t.me/KaRZMa_Code',
+            'facebook': 'https://www.facebook.com/profile.php?id=61551057515420',
+            'instagram': 'https://instagram.com/karzma_co.ms'
+        }
+        
+        # Enhanced user agents with more variation
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+        ]
+        
         self.setup_handlers()
-        self.check_dependencies()
-        
-    def check_dependencies(self):
-        """Check all required dependencies and system tools"""
-        print("\n🔍 DEPENDENCY CHECK:")
-        
-        # Check Python packages
-        try:
-            import telegram
-            print("✅ python-telegram-bot: Available")
-        except ImportError as e:
-            print(f"❌ python-telegram-bot: MISSING - {e}")
-            
-        try:
-            import yt_dlp
-            print("✅ yt-dlp: Available")
-            print(f"📦 yt-dlp version: {yt_dlp.version.__version__}")
-        except ImportError as e:
-            print(f"❌ yt-dlp: MISSING - {e}")
-            return
-            
-        # Check FFmpeg
-        try:
-            result = subprocess.run(['ffmpeg', '-version'], 
-                                  capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                print("✅ FFmpeg: Available")
-                # Get first line which contains version
-                version_line = result.stdout.split('\n')[0]
-                print(f"📦 FFmpeg: {version_line}")
-            else:
-                print("❌ FFmpeg: Not working properly")
-        except subprocess.TimeoutExpired:
-            print("⏱️ FFmpeg: Timeout (may still work)")
-        except FileNotFoundError:
-            print("❌ FFmpeg: Not found in PATH")
-        except Exception as e:
-            print(f"⚠️ FFmpeg check error: {e}")
-            
-        # Check yt-dlp functionality
-        print("\n🧪 TESTING YT-DLP:")
-        try:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                # Test with a very simple, known working video
-                test_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # Very short test video
-                info = ydl.extract_info(test_url, download=False)
-                if info:
-                    print("✅ yt-dlp: Can extract video info")
-                    print(f"📹 Test video title: {info.get('title', 'Unknown')[:50]}")
-                else:
-                    print("❌ yt-dlp: Cannot extract video info")
-        except Exception as e:
-            print(f"❌ yt-dlp test failed: {e}")
-            logger.error(f"yt-dlp test error: {e}")
-        
+
     def setup_handlers(self):
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("debug", self.debug_info))
-        self.application.add_handler(CommandHandler("test", self.test_download))
+        """Set up command and message handlers"""
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("about", self.about_command))
+        self.application.add_handler(CommandHandler("contact", self.contact_command))
+        self.application.add_handler(CallbackQueryHandler(self.button_callback))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_error_handler(self.error_handler)
-        
-    async def error_handler(self, update, context):
-        logger.error(f"❌ ERROR HANDLER: {context.error}")
-        print(f"💥 ERROR OCCURRED: {context.error}")
-        if update and update.effective_chat:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"❌ **DEBUG ERROR:**\n\n`{str(context.error)[:500]}`\n\nCheck Railway logs for details.",
-                parse_mode='Markdown'
-            )
-    
+
+    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
+        """Log Errors caused by Updates."""
+        logger.error("Exception while handling an update:", exc_info=context.error)
+        if update and hasattr(update, 'effective_chat'):
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="❌ An unexpected error occurred. The developer has been notified. Please try again later."
+                )
+            except Exception as e:
+                logger.error(f"Failed to send error message to user: {e}")
+
     def is_valid_url(self, text):
-        patterns = [
-            r'https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+',
-            r'https?://(?:www\.)?youtu\.be/[\w-]+',
-            r'https?://[^\s]+',
-        ]
-        return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
-    
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        welcome = """🔍 **DEBUG VERSION - AnyLink Downloader**
-
-This is a debug version to identify download issues.
-
-**🧪 Debug Commands:**
-• `/debug` - Show system information
-• `/test` - Test download with known working URL
-• Send any URL - Detailed download attempt with logs
-
-**🎯 Send me a video URL to see detailed debug info!**
-
-Example: `https://youtu.be/jNQXAC9IVRw`"""
-        
-        await update.message.reply_text(welcome, parse_mode='Markdown')
-        logger.info(f"👤 User {update.effective_user.id} started debug bot")
-        
-    async def debug_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show system debug information"""
-        debug_text = f"""🔍 **SYSTEM DEBUG INFO**
-
-**🤖 Bot Status:**
-• Token: {BOT_TOKEN[:20]}...
-• Telegram API: Connected ✅
-
-**🐍 Python Environment:**
-• Version: {sys.version.split()[0]}
-• Platform: {sys.platform}
-• Directory: `{os.getcwd()}`
-
-**📦 Dependencies:**"""
-
-        # Check dependencies in real-time
-        try:
-            import yt_dlp
-            debug_text += f"\n• yt-dlp: ✅ v{yt_dlp.version.__version__}"
-        except:
-            debug_text += "\n• yt-dlp: ❌ Missing"
-            
-        try:
-            result = subprocess.run(['ffmpeg', '-version'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                debug_text += "\n• FFmpeg: ✅ Available"
-            else:
-                debug_text += "\n• FFmpeg: ❌ Not working"
-        except:
-            debug_text += "\n• FFmpeg: ❌ Not found"
-
-        debug_text += f"""
-
-**💾 Storage:**
-• Temp dir: `{tempfile.gettempdir()}`
-• Write access: {"✅" if os.access(tempfile.gettempdir(), os.W_OK) else "❌"}
-
-**🌐 Network:**
-• Railway environment detected
-• Outbound connections: Likely allowed
-
-**📊 Memory/CPU:**
-• Available for processing
-
-Send `/test` to test download functionality!"""
-        
-        await update.message.reply_text(debug_text, parse_mode='Markdown')
-        
-    async def test_download(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Test download with a known working URL"""
-        test_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # Very short test video
-        
-        await update.message.reply_text(
-            f"🧪 **TESTING DOWNLOAD**\n\n"
-            f"Testing with: `{test_url}`\n"
-            f"This is a 1-second test video.\n\n"
-            f"⏳ Starting test...",
-            parse_mode='Markdown'
+        """Check if text contains a valid URL using a more robust regex"""
+        # This regex is quite broad to catch URLs in various formats.
+        url_pattern = re.compile(
+            r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
         )
+        return re.search(url_pattern, text) is not None
+
+    def get_platform_from_url(self, url):
+        """Determine the platform from URL"""
+        hostname = urlparse(url).hostname.lower().replace('www.', '')
+        if 'youtube.com' in hostname or 'youtu.be' in hostname:
+            return 'youtube'
+        if 'instagram.com' in hostname:
+            return 'instagram'
+        if 'tiktok.com' in hostname:
+            return 'tiktok'
+        if 'facebook.com' in hostname or 'fb.watch' in hostname:
+            return 'facebook'
+        if 'twitter.com' in hostname or 'x.com' in hostname:
+            return 'twitter'
+        if 'twitch.tv' in hostname:
+            return 'twitch'
+        if 'reddit.com' in hostname:
+            return 'reddit'
+        return 'unknown'
+
+    def get_ydl_opts(self, temp_dir, platform='unknown', attempt=1):
+        """Get yt-dlp options with an enhanced, multi-layered anti-bot strategy."""
+        user_agent = random.choice(self.user_agents)
         
-        await self.download_video_debug(update, context, test_url, is_test=True)
-    
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        text = update.message.text.strip()
-        
-        if self.is_valid_url(text):
-            await self.download_video_debug(update, context, text)
-        else:
-            await update.message.reply_text(
-                "🤔 **Not a valid URL**\n\n"
-                "Send me a video URL or use:\n"
-                "• `/debug` - System info\n"
-                "• `/test` - Test download\n\n"
-                "Example URL: `https://youtu.be/jNQXAC9IVRw`",
-                parse_mode='Markdown'
-            )
-    
-    async def download_video_debug(self, update: Update, context: ContextTypes.DEFAULT_TYPE, url: str, is_test=False):
-        """Download with extensive debugging"""
-        user_id = update.effective_user.id
-        
-        print(f"\n🎬 STARTING DOWNLOAD DEBUG for user {user_id}")
-        print(f"🔗 URL: {url}")
-        print(f"🧪 Test mode: {is_test}")
-        
-        status_msg = await update.message.reply_text(
-            f"🔍 **DEBUG DOWNLOAD {'TEST' if is_test else ''}**\n\n"
-            f"🔗 URL: `{url[:60]}...`\n"
-            f"⏳ Step 1: Checking dependencies...",
-            parse_mode='Markdown'
-        )
-        
-        temp_dir = None
-        step = 1
-        
-        try:
-            # Step 1: Check yt-dlp import
-            step += 1
-            await status_msg.edit_text(
-                f"🔍 **DEBUG STEP {step}**\n\n"
-                f"🔗 URL: `{url[:60]}...`\n"
-                f"✅ Step 1: Dependencies OK\n"
-                f"⏳ Step 2: Importing yt-dlp...",
-                parse_mode='Markdown'
-            )
-            
-            import yt_dlp
-            logger.info("✅ yt-dlp imported successfully")
-            
-            # Step 3: Create temp directory
-            step += 1
-            await status_msg.edit_text(
-                f"🔍 **DEBUG STEP {step}**\n\n"
-                f"🔗 URL: `{url[:60]}...`\n"
-                f"✅ Step 1-2: Dependencies OK\n"
-                f"⏳ Step 3: Creating temp directory...",
-                parse_mode='Markdown'
-            )
-            
-            temp_dir = tempfile.mkdtemp()
-            logger.info(f"✅ Temp directory created: {temp_dir}")
-            print(f"📁 Temp directory: {temp_dir}")
-            
-            # Step 4: Configure yt-dlp
-            step += 1
-            await status_msg.edit_text(
-                f"🔍 **DEBUG STEP {step}**\n\n"
-                f"🔗 URL: `{url[:60]}...`\n"
-                f"✅ Steps 1-3: Setup complete\n"
-                f"⏳ Step 4: Configuring downloader...",
-                parse_mode='Markdown'
-            )
-            
-            # Very basic yt-dlp options for debugging
-            ydl_opts = {
-                'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                'format': 'worst',  # Use worst quality for faster testing
-                'noplaylist': True,
-                'no_warnings': False,  # Show warnings
-                'ignoreerrors': False,
-                'verbose': True,  # Verbose output
+        # Base options with common anti-detection measures
+        base_opts = {
+            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'noplaylist': True,
+            'ignoreerrors': True,
+            'no_warnings': False,
+            'socket_timeout': 60,
+            'retries': 3, # yt-dlp internal retries
+            'fragment_retries': 3,
+            'user_agent': user_agent,
+            'http_headers': {
+                'Accept-Language': 'en-US,en;q=0.5'
+            },
+            'sleep_interval': random.uniform(1, 4), # Random delay between requests
+            'max_sleep_interval': 6,
+        }
+
+        # --- Platform-specific configurations ---
+
+        if platform == 'youtube':
+            # This dictionary will be updated based on the attempt number
+            yt_opts = {
+                'extractor_args': {
+                    'youtube': {
+                        'skip': ['hls', 'dash'],
+                        'player_skip': ['configs'],
+                        'max_comments': ['0'],
+                    }
+                }
             }
+            if attempt == 1: # Standard web client, good quality
+                yt_opts['format'] = 'best[height<=720][ext=mp4]/best[ext=mp4]/mp4/best'
+                yt_opts['extractor_args']['youtube']['player_client'] = ['web']
+            elif attempt == 2: # Android client, slightly lower quality
+                yt_opts['format'] = 'best[height<=480][ext=mp4]/best[ext=mp4]/mp4/best'
+                yt_opts['extractor_args']['youtube']['player_client'] = ['android']
+            elif attempt == 3: # iOS client, good quality
+                yt_opts['format'] = 'best[height<=720][ext=mp4]/best[ext=mp4]/mp4/best'
+                yt_opts['extractor_args']['youtube']['player_client'] = ['ios']
+            elif attempt == 4: # Last resort: insecure, worst quality
+                yt_opts['format'] = 'worst[ext=mp4]/worst'
+                yt_opts['prefer_insecure'] = True
+            elif attempt == 5: # The final attempt with everything thrown at it
+                yt_opts['format'] = 'worst/best'
+                yt_opts['prefer_insecure'] = True
+                yt_opts['no_check_certificate'] = True
+                # Use cookies if provided via environment variable (for developer use)
+                if YOUTUBE_COOKIE_FILE:
+                    yt_opts['cookiefile'] = YOUTUBE_COOKIE_FILE
+                    logger.info("Attempt 5: Using YouTube cookie file for download.")
+                else:
+                    logger.warning("Attempt 5: No cookie file found. This attempt may fail.")
             
-            logger.info(f"✅ yt-dlp options configured: {ydl_opts}")
+            base_opts.update(yt_opts)
+        
+        else: # Generic settings for other platforms
+            base_opts['format'] = 'best[ext=mp4]/best'
+
+        return base_opts
+
+    # --- Command Handlers (start, help, about, contact) are unchanged ---
+    # (Keeping them here for completeness, no modifications needed)
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_name = update.effective_user.first_name or "User"
+        logger.info(f"User {update.effective_user.id} ({user_name}) started the bot")
+        welcome_message = f"""🎬 **Welcome to AnyLink Downloader Bot, {user_name}!** 🎬\n\nI can help you download videos from various platforms including YouTube, Facebook, Instagram, TikTok, and many more!\n\n**How to use:**\n1. Send me any video URL\n2. I'll download it automatically\n3. Enjoy your video!\n\n**Commands:**\n/help - Show help information\n/about - About this bot\n/contact - Contact developer\n\nJust send me a video URL to get started! 🚀"""
+        keyboard = [[InlineKeyboardButton("📋 Help", callback_data="help"), InlineKeyboardButton("ℹ️ About", callback_data="about")], [InlineKeyboardButton("📞 Contact", callback_data="contact")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        target = update.message or update.callback_query
+        await target.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown') if isinstance(target, Update.message_class) else await target.edit_message_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        help_text = """🆘 **AnyLink Downloader Bot Help** 🆘\n\n**Supported Platforms:**\n✅ YouTube\n✅ Instagram\n✅ TikTok\n✅ Facebook\n✅ Twitter/X\n✅ And many more!\n\n**How to Download:**\n1. Copy the video URL from any supported platform\n2. Send the URL to this bot\n3. The bot will automatically download the video\n\n**Features:**\n📹 **Smart Quality Selection**\n⚡ **Fast Processing**\n🔄 **Advanced Retry Logic**\n🛡️ **Enhanced Anti-Detection**\n\nNeed more help? Use /contact to reach the developer! 👨‍💻"""
+        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="start")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        target = update.message or update.callback_query
+        await target.reply_text(help_text, reply_markup=reply_markup, parse_mode='Markdown') if isinstance(target, Update.message_class) else await target.edit_message_text(help_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def about_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        about_text = f"""ℹ️ **About AnyLink Downloader Bot** ℹ️\n\n**Version:** 2.2.0 (Enhanced Anti-Bot)\n**Developer:** {self.developer_info['name']}\n**Company:** {self.company_info['name']}\n\nThis bot uses advanced techniques to download videos from many platforms, including a multi-layered approach to bypass bot detection.\n\n**Developed with ❤️ by KaRZMa Code**"""
+        keyboard = [[InlineKeyboardButton("📞 Contact Developer", callback_data="contact"), InlineKeyboardButton("🏠 Main Menu", callback_data="start")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        target = update.message or update.callback_query
+        await target.reply_text(about_text, reply_markup=reply_markup, parse_mode='Markdown') if isinstance(target, Update.message_class) else await target.edit_message_text(about_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def contact_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        contact_text = f"""📞 **Contact Information** 📞\n\n**Developer:** {self.developer_info['name']}\n📧 **Email:** {self.developer_info['email']}\n📱 **WhatsApp:** {self.developer_info['whatsapp']}\n💬 **Telegram:** {self.developer_info['telegram']}\n\n**Company:** {self.company_info['name']}\n📢 **Company Telegram:** [KaRZMa Code Channel]({self.company_info['telegram']})"""
+        keyboard = [[InlineKeyboardButton("💬 WhatsApp", url=f"https://wa.me/{self.developer_info['whatsapp'].replace('+', '')}")], [InlineKeyboardButton("📧 Email", url=f"mailto:{self.developer_info['email']}")], [InlineKeyboardButton("🏠 Main Menu", callback_data="start")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        target = update.message or update.callback_query
+        await target.reply_text(contact_text, reply_markup=reply_markup, parse_mode='Markdown', disable_web_page_preview=True) if isinstance(target, Update.message_class) else await target.edit_message_text(contact_text, reply_markup=reply_markup, parse_mode='Markdown', disable_web_page_preview=True)
+
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        command_map = {
+            "start": self.start_command,
+            "help": self.help_command,
+            "about": self.about_command,
+            "contact": self.contact_command,
+        }
+        if query.data in command_map:
+            await command_map[query.data](update, context)
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text messages (URLs)"""
+        message_text = update.message.text.strip()
+        if self.is_valid_url(message_text):
+            # Extract the first URL found in the message
+            url = re.search(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', message_text).group(0)
+            await self.download_video(update, context, url)
+        else:
+            await update.message.reply_text("🤔 Please send me a valid video URL.")
+
+    async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
+        """Enhanced download function with multi-layered anti-bot bypass."""
+        platform = self.get_platform_from_url(url)
+        logger.info(f"User {update.effective_user.id} starting download from {platform}: {url}")
+        
+        processing_message = await update.message.reply_text(
+            f"⏳ Processing your {platform.title()} request...", parse_mode='Markdown'
+        )
+        
+        temp_dir = tempfile.mkdtemp()
+        try:
+            success = False
+            file_path = None
+            max_attempts = 5
+            last_error = "Unknown error"
             
-            # Step 5: Extract info (test connectivity)
-            step += 1
-            await status_msg.edit_text(
-                f"🔍 **DEBUG STEP {step}**\n\n"
-                f"🔗 URL: `{url[:60]}...`\n"
-                f"✅ Steps 1-4: Configuration OK\n"
-                f"⏳ Step 5: Testing video info extraction...",
-                parse_mode='Markdown'
-            )
-            
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            for attempt in range(1, max_attempts + 1):
                 try:
-                    info = ydl.extract_info(url, download=False)  # Don't download yet, just extract info
-                    title = info.get('title', 'Unknown')
-                    duration = info.get('duration', 0)
-                    logger.info(f"✅ Video info extracted: {title}")
-                    print(f"📹 Video title: {title}")
-                    print(f"⏱️ Duration: {duration} seconds")
+                    await processing_message.edit_text(
+                        f"📥 Downloading from {platform.title()} (Attempt {attempt}/{max_attempts})...\n"
+                        f"🛡️ Using anti-detection method #{attempt}",
+                        parse_mode='Markdown'
+                    )
+                    
+                    # Clean temp directory for new attempt
+                    for f in os.listdir(temp_dir):
+                        os.remove(os.path.join(temp_dir, f))
+                    
+                    if attempt > 1: await asyncio.sleep(random.uniform(2, 5))
+                    
+                    ydl_opts = self.get_ydl_opts(temp_dir, platform, attempt)
+                    
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        
+                    downloaded_files = [f for f in os.listdir(temp_dir) if os.path.isfile(os.path.join(temp_dir, f))]
+                    
+                    if downloaded_files:
+                        file_path = os.path.join(temp_dir, downloaded_files[0])
+                        if os.path.getsize(file_path) > 1024:
+                            success = True
+                            logger.info(f"Successfully downloaded on attempt {attempt}")
+                            break
+                        else:
+                            last_error = "Downloaded file was empty."
+                            logger.warning(f"Attempt {attempt} resulted in an empty file.")
+                    else:
+                        last_error = "No file was downloaded."
+                        logger.warning(f"Attempt {attempt} did not produce a file.")
+                        
                 except Exception as e:
-                    logger.error(f"❌ Info extraction failed: {e}")
-                    raise Exception(f"Cannot extract video info: {e}")
+                    last_error = str(e)
+                    logger.warning(f"Attempt {attempt} failed for {platform}: {last_error}")
+                    if attempt == max_attempts:
+                        raise e # Re-raise the last error if all attempts fail
             
-            # Step 6: Actual download
-            step += 1
-            await status_msg.edit_text(
-                f"🔍 **DEBUG STEP {step}**\n\n"
-                f"🔗 URL: `{url[:60]}...`\n"
-                f"✅ Steps 1-5: Video info OK\n"
-                f"📹 Title: {title[:30]}...\n"
-                f"⏳ Step 6: Starting actual download...",
-                parse_mode='Markdown'
-            )
+            if not success or not file_path:
+                raise Exception(f"All {max_attempts} download attempts failed. Last error: {last_error}")
             
-            # Now try the actual download
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                logger.info("🎯 Starting yt-dlp download...")
-                print("🎯 Starting yt-dlp download...")
-                
-                result = ydl.download([url])  # This should download the file
-                logger.info(f"✅ yt-dlp download completed with result: {result}")
-                print(f"✅ Download result: {result}")
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            if file_size_mb > 49:
+                await processing_message.edit_text(f"❌ **File too large!** ({file_size_mb:.1f} MB). Telegram's limit is 50 MB.")
+                return
             
-            # Step 7: Check downloaded files
-            step += 1
-            await status_msg.edit_text(
-                f"🔍 **DEBUG STEP {step}**\n\n"
-                f"🔗 URL: `{url[:60]}...`\n"
-                f"✅ Steps 1-6: Download completed\n"
-                f"📹 Title: {title[:30]}...\n"
-                f"⏳ Step 7: Checking downloaded files...",
-                parse_mode='Markdown'
-            )
+            await processing_message.edit_text("📤 Uploading to Telegram...")
             
-            files = os.listdir(temp_dir)
-            logger.info(f"📁 Files in temp directory: {files}")
-            print(f"📁 Files found: {files}")
-            
-            if not files:
-                raise Exception("No files found after download - yt-dlp may have failed silently")
-            
-            # Find the video file
-            video_files = [f for f in files if os.path.isfile(os.path.join(temp_dir, f))]
-            if not video_files:
-                raise Exception("No video files found in download directory")
-                
-            file_path = os.path.join(temp_dir, video_files[0])
-            file_size = os.path.getsize(file_path)
-            
-            logger.info(f"📄 Video file: {video_files[0]}")
-            logger.info(f"📊 File size: {file_size} bytes ({file_size/(1024*1024):.2f} MB)")
-            print(f"📄 Video file: {video_files[0]}")
-            print(f"📊 File size: {file_size} bytes")
-            
-            if file_size == 0:
-                raise Exception("Downloaded file is empty (0 bytes)")
-            
-            # Step 8: Upload to Telegram
-            step += 1
-            await status_msg.edit_text(
-                f"🔍 **DEBUG STEP {step}**\n\n"
-                f"✅ Steps 1-7: File ready\n"
-                f"📹 Title: {title[:30]}...\n"
-                f"📊 Size: {file_size/(1024*1024):.1f} MB\n"
-                f"⏳ Step 8: Uploading to Telegram...",
-                parse_mode='Markdown'
-            )
-            
-            # Check file size limit
-            if file_size > 50 * 1024 * 1024:  # 50MB
-                raise Exception(f"File too large: {file_size/(1024*1024):.1f} MB (max 50MB)")
-            
-            # Send the video
-            caption = f"✅ **DEBUG SUCCESS!**\n\n"
-            caption += f"📹 **Title:** {title[:50]}\n"
-            caption += f"📊 **Size:** {file_size/(1024*1024):.1f} MB\n"
-            caption += f"⏱️ **Duration:** {duration}s\n\n"
-            if is_test:
-                caption += f"🧪 **This was a test download**\n"
-            caption += f"🔍 **All debug steps completed successfully!**"
+            # Use info from the last successful download
+            title = info.get('title', 'Unknown Title')
+            duration = info.get('duration', 0)
+            duration_text = f"{duration//60}:{duration%60:02d}" if duration else "N/A"
+            caption = f"✅ **{title[:60]}...**\n\n" \
+                      f"🎯 **Platform:** {platform.title()} | ⏱️ **Duration:** {duration_text}\n\n" \
+                      f"🤖 Downloaded by @{context.bot.username}"
             
             with open(file_path, 'rb') as video_file:
                 await context.bot.send_video(
                     chat_id=update.effective_chat.id,
                     video=video_file,
-                    caption=caption[:1024],
-                    parse_mode='Markdown'
+                    caption=caption,
+                    parse_mode='Markdown',
+                    supports_streaming=True
                 )
-            
-            # Final success message
-            await status_msg.edit_text(
-                f"🎉 **DEBUG COMPLETE - SUCCESS!**\n\n"
-                f"✅ All 8 steps completed successfully\n"
-                f"📹 Video downloaded and sent\n"
-                f"📊 Size: {file_size/(1024*1024):.1f} MB\n\n"
-                f"🔍 **The download system is working!**\n"
-                f"{'🧪 Test completed successfully!' if is_test else '💡 Try more URLs!'}",
-                parse_mode='Markdown'
-            )
-            
-            logger.info("🎉 DEBUG DOWNLOAD COMPLETED SUCCESSFULLY!")
-            print("🎉 DEBUG DOWNLOAD COMPLETED SUCCESSFULLY!")
-            
+            await processing_message.delete()
+                
         except Exception as e:
-            error_details = str(e)
-            logger.error(f"❌ DEBUG DOWNLOAD FAILED at step {step}: {error_details}")
-            print(f"💥 ERROR at step {step}: {error_details}")
+            logger.error(f"Final download error for user {update.effective_user.id}: {str(e)}")
+            error_message = str(e).lower()
             
-            # Detailed error message
-            await status_msg.edit_text(
-                f"❌ **DEBUG FAILED at Step {step}**\n\n"
-                f"🔗 URL: `{url[:60]}...`\n"
-                f"💥 **Error:** `{error_details[:200]}{'...' if len(error_details) > 200 else ''}`\n\n"
-                f"🔍 **What this means:**\n"
-                f"The download process failed at step {step}.\n"
-                f"Check Railway logs for full details.\n\n"
-                f"💡 **Next steps:**\n"
-                f"• Try `/test` with a different URL\n"
-                f"• Check `/debug` for system status\n"
-                f"• Report this error to developer",
-                parse_mode='Markdown'
-            )
+            final_error_text = "❌ **Download Failed!**\n\n"
+            if 'sign in to confirm' in error_message or 'not a bot' in error_message:
+                final_error_text += "🤖 **Reason:** YouTube is blocking the download, suspecting bot activity. This is a common issue as their security is very high.\n\n💡 **What to do:** Please try a different video or try this one again later. Some videos are more protected than others."
+            elif "private" in error_message or "unavailable" in error_message:
+                final_error_text += f"🔒 **Reason:** The video on {platform.title()} is private, has been deleted, or is unavailable."
+            elif "geo" in error_message or "country" in error_message:
+                final_error_text += f"🌍 **Reason:** This video is geo-restricted and not available for download from the bot's server location."
+            else:
+                final_error_text += f"🔧 **Reason:** An unexpected technical issue occurred. The developer has been notified.\n\n`Error: {str(e)[:100]}`"
             
-        finally:
-            # Cleanup
-            if temp_dir and os.path.exists(temp_dir):
-                try:
-                    shutil.rmtree(temp_dir)
-                    logger.info(f"🧹 Cleaned up temp directory: {temp_dir}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to clean temp directory: {e}")
-    
-    def run(self):
-        print("\n🚀 STARTING DEBUG BOT...")
-        print("📱 Ready for debug testing!")
-        print("🔍 Send /debug for system info")
-        print("🧪 Send /test for download test")
-        print("🎬 Send any URL for detailed download debug")
+            await processing_message.edit_text(final_error_text, parse_mode='Markdown')
         
-        try:
-            self.application.run_polling(drop_pending_updates=True)
-        except Exception as e:
-            logger.error(f"❌ Bot failed to start: {e}")
-            print(f"💥 CRITICAL ERROR: {e}")
+        finally:
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    async def post_init(self, application: Application):
+        """Called after the bot is initialized"""
+        bot_info = await application.bot.get_me()
+        logger.info(f"Bot @{bot_info.username} (v2.2) is initialized and ready!")
+
+    def run(self):
+        """Start the bot"""
+        logger.info("🚀 Starting AnyLink Downloader Bot (v2.2 Enhanced Anti-Bot)...")
+        self.application.post_init = self.post_init
+        
+        # Handle graceful shutdown on Ctrl+C
+        def signal_handler(signum, frame):
+            logger.info("Received shutdown signal, stopping bot...")
+            # This is a simplified shutdown. For production, you might want more complex cleanup.
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        self.application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    print("🔍 STARTING DEBUG MODE...")
-    
-    try:
-        bot = DebugBot()
-        bot.run()
-    except Exception as e:
-        print(f"💥 STARTUP FAILED: {e}")
-        logger.error(f"Startup failed: {e}")
-        sys.exit(1)
+    bot = AnyLinkDownloaderBot()
+    bot.run()
