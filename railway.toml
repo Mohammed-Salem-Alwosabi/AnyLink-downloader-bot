@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python main.py"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[build.env]
+NIXPACKS_PYTHON_VERSION = "3.11"
+
+[deploy.env]
+PYTHONUNBUFFERED = "1"
