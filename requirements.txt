@@ -1,5 +1,5 @@
 python-telegram-bot==20.7
-yt-dlp>=2024.1.30
+yt-dlp>=25.1.1
 aiohttp>=3.8.0
 aiofiles>=23.0.0
 requests>=2.28.0
